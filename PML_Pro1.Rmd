@@ -1,0 +1,129 @@
+---
+title: "Predicting Movement"
+author: "Devansh"
+date: "July 11, 2018"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+## Background
+
+Using devices such as Jawbone Up, Nike FuelBand, and Fitbit it is now possible to collect a large amount of data about personal activity relatively inexpensively. These type of devices are part of the quantified self movement a group of enthusiasts who take measurements about themselves regularly to improve their health, to find patterns in their behavior, or because they are tech geeks. One thing that people regularly do is quantify how much of a particular activity they do but they rarely quantify how well they do it. In this project our goal will be to use data from accelerometers on the belt forearm arm and dumbell of six participants. They were asked to perform barbell lifts correctly and incorrectly in five different ways
+
+## what you should submit
+The goal of your project is to predict the manner in which they did the exercise. This is the classe variable in the training set. You may use any of the other variables to predict with. You should create a report describing how you built your model how you used cross validation, what you think the expected out of sample error is, and why you made the choices you did. You will also use your prediction model to predict 20 different test cases.
+
+## Getting and Reading Data
+
+```{r}
+library(rattle)
+library(caret)
+library(rpart)
+library(rpart.plot)
+library(corrplot)
+library(randomForest)
+library(RColorBrewer)
+set.seed(56789)
+
+trainUrl <-"https://d396qusza40orc.cloudfront.net/predmachlearn/pml-training.csv"
+testUrl <- "https://d396qusza40orc.cloudfront.net/predmachlearn/pml-testing.csv"
+trainFile <- "./data/pml-training.csv"
+testFile  <- "./data/pml-testing.csv"
+if (!file.exists("./data")) {
+  dir.create("./data")
+}
+if (!file.exists(trainFile)) {
+  download.file(trainUrl, destfile = trainFile, method = "curl")
+}
+if (!file.exists(testFile)) {
+  download.file(testUrl, destfile = testFile, method = "curl")
+}
+rm(trainUrl)
+rm(testUrl)
+trainRaw <- read.csv(trainFile)
+testRaw <- read.csv(testFile)
+dim(trainRaw)
+dim(testRaw)
+rm(trainFile)
+rm(testFile)
+```
+
+## Checking zero variance and removing them
+
+```{r}
+NZV <- nearZeroVar(trainRaw, saveMetrics = TRUE)
+head(NZV, 20)
+training01 <- trainRaw[, !NZV$nzv]
+testing01 <- testRaw[, !NZV$nzv]
+dim(training01)
+dim(testing01)
+rm(trainRaw)
+rm(testRaw)
+rm(NZV)
+```
+
+## Removing same col
+
+```{r}
+regex <- grepl("^X|timestamp|user_name", names(training01))
+training <- training01[, !regex]
+testing <- testing01[, !regex]
+rm(regex)
+rm(training01)
+rm(testing01)
+dim(training)
+dim(testing)
+```
+
+## Removing missing values
+```{r}
+cond <- (colSums(is.na(training)) == 0)
+training <- training[, cond]
+testing <- testing[, cond]
+rm(cond)
+```
+## Corelation matrix
+```{r}
+corrplot(cor(training[, -length(names(training))]), method = "color", tl.cex = 0.5)
+```
+
+## Cross-validation : The training data set is split into two parts 70% data for training the model and 30% for checking the prediction and performance of the model
+
+```{r}
+set.seed(56789) # For reproducibile purpose
+inTrain <- createDataPartition(training$classe, p = 0.70, list = FALSE)
+validation <- training[-inTrain, ]
+training <- training[inTrain, ]
+rm(inTrain)
+```
+
+## Building the model tree
+
+```{r}
+modelTree <- rpart(classe ~ ., data = training, method = "class")
+prp(modelTree)
+predictTree <- predict(modelTree, validation, type = "class")
+confusionMatrix(validation$classe, predictTree)
+accuracy <- postResample(predictTree, validation$classe)
+ose <- 1 - as.numeric(confusionMatrix(validation$classe, predictTree)$overall[1])
+rm(predictTree)
+rm(modelTree)
+```
+## Random Forest
+```{r}
+modelRF <- train(classe ~ ., data = training, method = "rf", trControl = trainControl(method = "cv", 5), ntree = 250)
+modelRF
+predictRF <- predict(modelRF, validation)
+confusionMatrix(validation$classe, predictRF)
+accuracy <- postResample(predictRF, validation$classe)
+ose <- 1 - as.numeric(confusionMatrix(validation$classe, predictRF)$overall[1])
+rm(predictRF)
+```
+## Applying Random forest on test data
+```{r}
+rm(accuracy)
+rm(ose)
+predict(modelRF, testing[, -length(names(testing))])
+```
